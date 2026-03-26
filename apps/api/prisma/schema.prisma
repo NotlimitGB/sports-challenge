@@ -1,0 +1,150 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ChallengeStatus {
+  draft
+  registration
+  active
+  verification
+  finalized
+  cancelled
+}
+
+enum ParticipantStatus {
+  joined
+  passed
+  failed
+  claimed
+  refunded
+}
+
+model User {
+  id               String                 @id @default(uuid())
+  walletAddress    String?                @unique @map("wallet_address")
+  displayName      String?                @map("display_name")
+  balance          Int                    @default(1000)
+  stravaAthleteId  BigInt?                @unique @map("strava_athlete_id")
+  stravaFirstname  String?                @map("strava_firstname")
+  stravaLastname   String?                @map("strava_lastname")
+  createdAt        DateTime               @default(now()) @map("created_at")
+  updatedAt        DateTime               @updatedAt @map("updated_at")
+
+  stravaToken      StravaToken?
+  participants     ChallengeParticipant[]
+  stravaActivities StravaActivity[]
+
+  @@map("users")
+}
+
+model StravaToken {
+  id           String   @id @default(uuid())
+  userId       String   @unique @map("user_id")
+  accessToken  String   @map("access_token")
+  refreshToken String   @map("refresh_token")
+  expiresAt    DateTime @map("expires_at")
+  scope        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("strava_tokens")
+}
+
+model Challenge {
+  id                     String                 @id @default(uuid())
+  contractAddress        String?                @unique @map("contract_address")
+  title                  String
+  description            String?
+  depositAmountWei       Decimal                @db.Decimal(78, 0) @map("deposit_amount_wei")
+  requiredSportType      String                 @default("Run") @map("required_sport_type")
+  targetDistanceMeters   Int                    @map("target_distance_meters")
+  minMovingTimeSeconds   Int                    @default(0) @map("min_moving_time_seconds")
+  registrationDeadline   DateTime               @map("registration_deadline")
+  challengeStartAt       DateTime               @map("challenge_start_at")
+  challengeEndAt         DateTime               @map("challenge_end_at")
+  status                 ChallengeStatus        @default(draft)
+  organizerWalletAddress String                 @map("organizer_wallet_address")
+  verifierWalletAddress  String?                @map("verifier_wallet_address")
+  createdAt              DateTime               @default(now()) @map("created_at")
+  updatedAt              DateTime               @updatedAt @map("updated_at")
+
+  participants ChallengeParticipant[]
+  activityLinks ChallengeActivityLink[]
+
+  @@map("challenges")
+}
+
+model ChallengeParticipant {
+  id                     String                 @id @default(uuid())
+  challengeId            String                 @map("challenge_id")
+  userId                 String                 @map("user_id")
+  joinedTxHash           String?                @map("joined_tx_hash")
+  joinedAt               DateTime               @default(now()) @map("joined_at")
+  totalDistanceMeters    Int                    @default(0) @map("total_distance_meters")
+  totalMovingTimeSeconds Int                    @default(0) @map("total_moving_time_seconds")
+  passed                 Boolean?
+  status                 ParticipantStatus      @default(joined)
+  verifiedAt             DateTime?              @map("verified_at")
+  earnedCredits          Int                    @default(0) @map("earned_credits")
+  rewardCreditedAt       DateTime?              @map("reward_credited_at")
+  onchainResultSubmitted Boolean                @default(false) @map("onchain_result_submitted")
+  claimedTxHash          String?                @map("claimed_tx_hash")
+  createdAt              DateTime               @default(now()) @map("created_at")
+  updatedAt              DateTime               @updatedAt @map("updated_at")
+
+  challenge Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  activityLinks ChallengeActivityLink[]
+
+  @@unique([challengeId, userId])
+  @@map("challenge_participants")
+}
+
+model StravaActivity {
+  id                 String   @id @default(uuid())
+  userId             String   @map("user_id")
+  stravaActivityId   BigInt   @unique @map("strava_activity_id")
+  name               String?
+  sportType          String?  @map("sport_type")
+  startDate          DateTime @map("start_date")
+  distanceMeters     Decimal  @default(0) @db.Decimal(12, 2) @map("distance_meters")
+  movingTimeSeconds  Int      @default(0) @map("moving_time_seconds")
+  elapsedTimeSeconds Int      @default(0) @map("elapsed_time_seconds")
+  trainer            Boolean?
+  commute            Boolean?
+  manual             Boolean?
+  rawPayload         Json?    @map("raw_payload")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  challengeLinks ChallengeActivityLink[]
+
+  @@map("strava_activities")
+}
+
+model ChallengeActivityLink {
+  id                       String   @id @default(uuid())
+  challengeId              String   @map("challenge_id")
+  participantId            String   @map("participant_id")
+  activityId               String   @map("activity_id")
+  countedDistanceMeters    Decimal  @default(0) @db.Decimal(12, 2) @map("counted_distance_meters")
+  countedMovingTimeSeconds Int      @default(0) @map("counted_moving_time_seconds")
+  createdAt                DateTime @default(now()) @map("created_at")
+
+  challenge   Challenge            @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  participant ChallengeParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  activity    StravaActivity       @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@unique([challengeId, activityId])
+  @@map("challenge_activity_links")
+}
